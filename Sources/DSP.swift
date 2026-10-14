@@ -56,6 +56,26 @@ func parseCurve(_ text: String) throws -> Curve {
     return curve
 }
 
+/// Writes a curve in the same format parseCurve reads; parseCurve(formatCurve(c)) == c for curves
+/// whose numbers are already at this precision (the face rounds edits to it).
+func formatCurve(_ c: Curve, title: String) -> String {
+    var out = "# \(title). Written by eq; Equalizer APO / AutoEQ format. Save to apply.\n"
+    out += "Preamp: " + (c.preamp.map { String(format: "%.1f dB", $0) } ?? "auto") + "\n"
+    for (i, b) in c.bands.enumerated() {
+        out += String(format: "Filter %d: ON %@ Fc %@ Hz Gain %.1f dB Q %.2f\n", i + 1, b.kind.rawValue,
+                      b.fc.rounded() == b.fc ? String(Int(b.fc)) : String(format: "%.1f", b.fc), b.gain, b.q)
+    }
+    return out
+}
+
+/// Rounds an edit to what the file stores: Fc to a musical grid, gain 0.1 dB, Q 0.01.
+func snapped(_ b: Band) -> Band {
+    let step: Double = b.fc < 100 ? 1 : b.fc < 1000 ? 5 : b.fc < 10000 ? 50 : 100
+    return Band(kind: b.kind, fc: min(20000, max(20, (b.fc / step).rounded() * step)),
+                gain: (min(15, max(-15, b.gain)) * 10).rounded() / 10,
+                q: (min(10, max(0.3, b.q)) * 100).rounded() / 100)
+}
+
 struct ParseError: Error, CustomStringConvertible {
     let line: Int, text: String
     var description: String { "line \(line): can't read \"\(text)\"" }
@@ -170,11 +190,14 @@ final class Processor: @unchecked Sendable {
 
     /// Main thread. Waits until the audio thread has picked up the previous change, so a bank is
     /// never rewritten while it may be in use. If audio is stopped nobody reads either bank.
-    func load(_ bqs: [Biquad], preampDB: Double, audioRunning: Bool) {
+    /// With wait false it gives up (returns false) instead of waiting; the caller retries later.
+    @discardableResult
+    func load(_ bqs: [Biquad], preampDB: Double, audioRunning: Bool, wait: Bool = true) -> Bool {
         precondition(bqs.count <= Self.maxBands)
         if audioRunning {
             var spins = 0
             while seen.load(ordering: .acquiring) != published.load(ordering: .relaxed), spins < 500 {
+                if !wait { return false }
                 usleep(1000); spins += 1
             }
         }
@@ -188,6 +211,7 @@ final class Processor: @unchecked Sendable {
         gains[next] = pow(10, preampDB / 20)
         published.store(next, ordering: .releasing)
         if !audioRunning { seen.store(next, ordering: .releasing) }
+        return true
     }
 
     /// Audio thread. Interleaved Float32 in and out; output channel c reads input channel

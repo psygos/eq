@@ -35,7 +35,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         face = FaceView(frame: NSRect(origin: .zero, size: FaceView.size))
         face.onHold = { [weak self] in self?.hold($0) }
         face.onPower = { [weak self] in self?.engine.enabled.toggle() }
-        face.onEdit = { [weak self] in self?.edit() }
+        face.onOpenFile = { [weak self] in self?.edit() }
+        face.onBeginEdit = { [weak self] in self?.remember() }
+        face.onEdit = { [weak self] c, final in self?.engine.apply(c, persist: final) }
+        face.onUndo = { [weak self] redo in self?.undo(redo: redo) }
+        face.onSlot = { [weak self] i, save in self?.slot(i, save: save) }
         panel.contentView = face
 
         engine.onChange = { [weak self] in self?.update() }
@@ -56,8 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         f.device = engine.deviceName
         f.enabled = engine.enabled
         f.running = engine.running
-        f.hasCurve = engine.curve != nil
-        f.bands = engine.curve?.bands ?? []
+        f.curve = engine.curve
+        f.slots = (0..<4).map { FileManager.default.fileExists(atPath: Curves.slot($0, for: engine.deviceName).path) }
+        f.activeSlot = engine.curve.flatMap { c in (0..<4).first { Curves.loadSlot($0, for: engine.deviceName) == c } }
         f.fs = engine.chain?.fs ?? HAL.rate(engine.device)
         f.preamp = engine.preamp
         f.clipped = engine.proc.clipped.load(ordering: .relaxed)
@@ -113,6 +118,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func openFolder() { NSWorkspace.shared.open(Curves.dir) }
+
+    // MARK: edits: undo, presets
+
+    private var undoStack: [Curve?] = [], redoStack: [Curve?] = []
+
+    func remember() {
+        undoStack.append(engine.curve); redoStack.removeAll()
+        if undoStack.count > 100 { undoStack.removeFirst() }
+    }
+
+    func undo(redo: Bool) {
+        let popped = redo ? redoStack.popLast() : undoStack.popLast()
+        guard let c = popped else { NSSound.beep(); return }
+        if redo { undoStack.append(engine.curve) } else { redoStack.append(engine.curve) }
+        engine.apply(c ?? Curve(preamp: nil, bands: []), persist: true)
+    }
+
+    /// Click a numbered key to load its curve; hold it (or ⌥1–4) to save the current one there.
+    func slot(_ i: Int, save: Bool) {
+        let dev = engine.deviceName
+        if save {
+            guard let c = engine.curve else { NSSound.beep(); return }
+            Curves.saveSlot(i, c, for: dev)
+            update()
+        } else if let c = Curves.loadSlot(i, for: dev) {
+            remember()
+            engine.apply(c, persist: true)
+        } else { NSSound.beep() }
+    }
 
     // MARK: hold to compare
 

@@ -32,6 +32,18 @@ enum SelfTest {
             expect((try? parseCurve(bad)) == nil, "reject \"\(bad)\"")
         }
 
+        // Round trip: what the face writes is what it reads back
+        var rt = 0
+        for _ in 0..<500 {
+            let n = Int(rng.next() * 8)
+            let c = Curve(preamp: rng.next() < 0.5 ? nil : (rng.next() * 12 - 12) * 10 / 10,
+                          bands: (0..<n).map { _ in snapped(Band(kind: [.pk, .lsc, .hsc][Int(rng.next() * 3)],
+                                  fc: 20 * pow(1000, rng.next()), gain: rng.next() * 30 - 15, q: 0.3 * pow(30, rng.next()))) })
+            let c2 = Curve(preamp: c.preamp.map { ($0 * 10).rounded() / 10 }, bands: c.bands)
+            if (try? parseCurve(formatCurve(c2, title: "t"))) != c2 { rt += 1 }
+        }
+        expect(rt == 0, "file round trip: parse(format(curve)) == curve, 500 random curves", "\(rt) mismatches")
+
         // Spec points of the cookbook filters, from their definitions (not from the code's formulas)
         for fs in [44100.0, 48000, 96000] {
             for g in [-12.0, -3, 3, 12] {

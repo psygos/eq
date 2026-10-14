@@ -194,11 +194,26 @@ final class Engine {
         onChange()
     }
 
-    private func loadCoefficients(running: Bool, fs: Double? = nil) {
+    private func loadCoefficients(running: Bool, fs: Double? = nil, wait: Bool = true) {
         guard let curve else { return }
         let rate = fs ?? chain?.fs ?? 48000
         preamp = resolvedPreamp(curve, fs: rate)
-        proc.load(curve.bands.map { design($0, fs: rate) }, preampDB: preamp, audioRunning: running)
+        proc.load(curve.bands.map { design($0, fs: rate) }, preampDB: preamp, audioRunning: running, wait: wait)
+    }
+
+    /// An edit from the face. While dragging (persist false) it is heard at once but never makes
+    /// the UI wait on the audio thread; on release (persist true) it is loaded for certain and
+    /// written to the device's file, which stays the source of truth.
+    func apply(_ c: Curve, persist: Bool) {
+        if c != curve {
+            curve = c
+            if running { loadCoefficients(running: true, wait: persist) }
+            else { preamp = resolvedPreamp(c, fs: HAL.rate(device)) }
+        } else if persist, running {
+            loadCoefficients(running: true, wait: true)
+        }
+        if persist { Curves.save(c, for: deviceName) }   // the folder watcher then (re)starts the chain if needed
+        onChange()
     }
 
     private func watch(_ dev: AudioObjectID) {
@@ -229,6 +244,28 @@ enum Curves {
         let url = file(for: device)
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return try parseCurve(text)
+    }
+
+    static func save(_ c: Curve, for device: String) {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? formatCurve(c, title: device).write(to: file(for: device), atomically: true, encoding: .utf8)
+    }
+
+    // Four preset slots per device: ~/.config/eq/slots/<device>/<n>.txt
+    static func slot(_ n: Int, for device: String) -> URL {
+        dir.appendingPathComponent("slots").appendingPathComponent(device.replacingOccurrences(of: "/", with: "-"))
+            .appendingPathComponent("\(n).txt")
+    }
+
+    static func loadSlot(_ n: Int, for device: String) -> Curve? {
+        guard let text = try? String(contentsOf: slot(n, for: device), encoding: .utf8) else { return nil }
+        return try? parseCurve(text)
+    }
+
+    static func saveSlot(_ n: Int, _ c: Curve, for device: String) {
+        let url = slot(n, for: device)
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? formatCurve(c, title: "\(device), slot \(n)").write(to: url, atomically: true, encoding: .utf8)
     }
 
     /// Calls back on the main queue whenever anything in the folder changes (editors save by
