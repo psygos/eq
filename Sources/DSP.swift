@@ -140,8 +140,8 @@ func resolvedPreamp(_ c: Curve, fs: Double) -> Double {
 /// Runs the curve on the audio thread: no allocation, no locks, no reference counting, no Swift
 /// collections; every buffer is allocated once in init. Coefficients live in two banks: the main
 /// thread writes the idle one and publishes it, the audio thread switches at the start of a
-/// block. Filters run in Double. With no bands and a 0 dB preamp, or while bypassed, the output
-/// is bit-identical to the input.
+/// block. Filters run in Double. With no bands and a 0 dB preamp the output is bit-identical to
+/// the input; while comparing it is the input times the preamp, exactly.
 final class Processor: @unchecked Sendable {
     static let maxBands = 32, maxChannels = 8
 
@@ -221,7 +221,9 @@ final class Processor: @unchecked Sendable {
                         y = o
                     }
                 }
-                let out: Float = m == 1 ? Float(y) : m == 0 ? x : Float(y * m + Double(x) * (1 - m))
+                // compare plays the original at the curve's level (the preamp), so only the
+                // shape differs: louder always sounds better, and that isn't a fair comparison
+                let out: Float = m == 1 ? Float(y) : m == 0 ? Float(Double(x) * g) : Float(y * m + Double(x) * g * (1 - m))
                 output[f * outCh + ch] = out
                 pin = max(pin, abs(x)); pout = max(pout, abs(out))
                 if abs(out) > 1 { clips += 1 }

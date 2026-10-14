@@ -94,7 +94,8 @@ enum SelfTest {
             p.bypass.store(true, ordering: .relaxed); p.reset()
             var y = [Float](repeating: 0, count: N * 2)
             p.process(noise, inCh: 2, &y, outCh: 2, frames: N, fs: 48000)
-            expect(y == noise, "bypass is bit-identical")
+            let g = pow(10, -6.0 / 20)
+            expect(y == noise.map { Float(Double($0) * g) }, "compare = original at the preamp's level, exactly")
 
             // A/B crossfade: from bypass to curve over 10 ms, no NaN, settles exactly on the curve
             p.bypass.store(false, ordering: .relaxed)

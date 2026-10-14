@@ -12,3 +12,8 @@ cp Info.plist "$APP/Contents/"
 IDENTITY=$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')
 codesign --force --sign "${IDENTITY:--}" "$APP" 2>&1 | grep -v 'replacing existing signature' || true
 echo "built $APP ($(du -sh "$APP" | cut -f1)), signed: ${IDENTITY:-ad-hoc}"
+if [ "$1" = install ]; then
+  osascript -e 'quit app id "com.psygos.eq"' >/dev/null 2>&1 || true; sleep 1; pkill -x eq 2>/dev/null || true; sleep 0.3
+  mkdir -p ~/Applications && rm -rf ~/Applications/eq.app && cp -R "$APP" ~/Applications/ && open ~/Applications/eq.app
+  echo "installed ~/Applications/eq.app"
+fi
