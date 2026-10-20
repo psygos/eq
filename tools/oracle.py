@@ -3,7 +3,7 @@
 Reads the cases written by `eq selftest <file>` and checks, per case:
   1. coefficients: a separate Python port of the RBJ cookbook gives the same numbers
   2. processing: scipy's sosfilt (float64) on an impulse matches eq's live Processor (float32)
-  3. response: |FFT(eq's impulse response)| matches scipy's freqz of the coefficients
+  3. response: |FFT(eq's impulse response)| matches |FFT(scipy's float64 one)|, same window
   4. peak: eq's peak search finds the true maximum of the curve (vs a 400k-point grid)
 Run: uv run --no-project --with numpy --with scipy python tools/oracle.py cases.json
 """
@@ -40,14 +40,12 @@ for c in cases:
     ref = signal.sosfilt(sos, x)
     worst["ir"] = max(worst["ir"], np.max(np.abs(ir - ref)) / np.max(np.abs(ref)))
 
-    # magnitude of the measured IR vs the analytic response, 20 Hz .. 0.45 fs, where the 8192-tap
-    # IR has decayed (skip cases whose IR hasn't: very low, very sharp filters)
-    if np.max(np.abs(ref[-256:])) < 1e-7 * np.max(np.abs(ref)):
-        f = np.fft.rfftfreq(N, 1 / fs); H = np.fft.rfft(ir)
-        band = (f >= 20) & (f <= 0.45 * fs)
-        _, Ha = signal.sosfreqz(sos, worN=f[band], fs=fs)
-        d = 20 * np.log10(np.abs(H[band])) - 20 * np.log10(np.abs(Ha))
-        worst["resp"] = max(worst["resp"], np.max(np.abs(d)))
+    # magnitude of eq's IR vs the float64 IR through the same 8192-tap window, 20 Hz .. 0.45 fs.
+    # Against the analytic response the window's own truncation shows up: for low, sharp curves it
+    # exceeds the limit even for scipy's float64 IR (9e-3 dB at 27 Hz, case 36), whatever eq does.
+    f = np.fft.rfftfreq(N, 1 / fs); band = (f >= 20) & (f <= 0.45 * fs)
+    d = 20 * np.log10(np.abs(np.fft.rfft(ir)[band])) - 20 * np.log10(np.abs(np.fft.rfft(ref)[band]))
+    worst["resp"] = max(worst["resp"], np.max(np.abs(d)))
 
     grid = np.exp(np.linspace(np.log(10), np.log(fs * 0.4999), 400_000))
     _, Hg = signal.sosfreqz(sos, worN=grid, fs=fs)
