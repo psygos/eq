@@ -573,7 +573,7 @@ func statusGlyph(bands: [Band], fs: Double, live: Bool) -> NSImage {
 }
 
 /// eq render <file.png>: draws faces offline at 2x for review, on a plain desk.
-func renderFace(_ faces: [Face], to path: String) {
+func renderFace(_ faces: [Face], to path: String, ground: NSColor? = Palette.rgb(0xB8BCC2)) {
     let pad: CGFloat = 28, gap: CGFloat = 24
     let W = pad * 2 + CGFloat(faces.count) * FaceView.size.width + CGFloat(faces.count - 1) * gap
     let H = pad * 2 + FaceView.size.height
@@ -582,7 +582,7 @@ func renderFace(_ faces: [Face], to path: String) {
     rep.size = NSSize(width: W, height: H)
     NSGraphicsContext.saveGraphicsState()
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
-    Palette.rgb(0xB8BCC2).setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
+    if let ground { ground.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill() }
     for (i, f) in faces.enumerated() {
         let v = FaceView(frame: NSRect(origin: .zero, size: FaceView.size)); v.face = f
         let ox = pad + CGFloat(i) * (FaceView.size.width + gap)

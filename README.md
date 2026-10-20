@@ -1,7 +1,5 @@
 <p align="center"><img src="docs/face.png" width="440" alt="eq"></p>
 
-# eq
-
 A system-wide equalizer for macOS that lives in the menu bar. It reshapes everything playing on your output device. There is no audio driver: eq listens through a Core Audio process tap and plays the result back to the same device.
 
 macOS 15 or later, Apple Silicon. Tested on macOS 27.0.1 (26A434), M4.
